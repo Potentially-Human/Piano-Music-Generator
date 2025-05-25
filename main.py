@@ -26,6 +26,7 @@ def main(trained = False) -> None:
         sequence_length = 300,
         learning_rate = 1e-3,
         training_iterations = 2000,
+        output_length = 500,
     )
 
 
@@ -41,6 +42,13 @@ def main(trained = False) -> None:
         note_list = notes(path)
         note_to_int, int_to_note, offset_to_int, int_to_offset, duration_to_int, int_to_duration = get_vocab(note_list)
 
+        note_dictionary = set()
+        for midi_file in tqdm(note_list):
+            for note in midi_file:
+                note_dictionary.add((note[0], note[1]))
+
+        note_dictionary = list(note_dictionary)
+
 
         input_sequences, output_sequences = generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length = params["sequence_length"])
 
@@ -52,8 +60,7 @@ def main(trained = False) -> None:
             "int_to_offset": int_to_offset,
             "duration_to_int": duration_to_int,
             "int_to_duration": int_to_duration,
-            "input_sequences": input_sequences,
-            "output_sequences": output_sequences
+            "note_dictionary": note_dictionary,
         }
 
         with open(os.path.join(model_dir, "vocabs.pkl"), "wb") as f:
@@ -117,8 +124,7 @@ def main(trained = False) -> None:
         int_to_offset = vocabs["int_to_offset"]
         duration_to_int = vocabs["duration_to_int"]
         int_to_duration = vocabs["int_to_duration"]
-        input_sequences = vocabs["input_sequences"]
-        output_sequences = vocabs["output_sequences"]
+        note_dictionary = vocabs["note_dictionary"]
 
         model = LSTMModel(
             vocab_size=len(int_to_note),
@@ -132,14 +138,11 @@ def main(trained = False) -> None:
     os.makedirs("./output", exist_ok = True)
 
     for i in range(count):
-        seed_idx = np.random.choice(len(input_sequences), 1)[0]
-        seed_pitch = input_sequences[seed_idx][0][0]  # first pitch index of the sequence
-        seed_offset = input_sequences[seed_idx][1][0] # first offset index of the sequence
-        seed_duration = input_sequences[seed_idx][2][0] # first duration index of the sequence
+        seed_idx = np.random.choice(len(note_dictionary), 1)[0]
+        seed_pitch = note_dictionary[seed_idx][0]  # first pitch index of the sequence
+        seed_duration = note_dictionary[seed_idx][1] # first duration index of the sequence
 
-        seed_tuple = (seed_pitch, seed_offset, seed_duration)
-
-        print(seed_tuple)
+        seed_tuple = (seed_pitch, 0, seed_duration)
 
         output = generate_notes(
             model,
@@ -148,7 +151,7 @@ def main(trained = False) -> None:
             offset_to_int, int_to_offset,
             duration_to_int, int_to_duration,
             device,
-            20
+            params["output_length"]
         )
         create_midi(output, os.path.join("./output", "output" + str(i) + ".mid"))
 
@@ -164,4 +167,4 @@ def main(trained = False) -> None:
         
 
 if __name__ == "__main__":
-    main()
+    main(True)
