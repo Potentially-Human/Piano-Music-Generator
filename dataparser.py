@@ -5,16 +5,15 @@ import numpy as np
 from itertools import chain
 import torch
 from tqdm import tqdm
+from math import floor
 
 # attempting to open midi files
 
 # https://github.com/arman-aminian/lofi-generator/blob/master/Piano%20Generator.ipynb
 
 def standardize_duration(f: float) -> float:
-    if f >= 1:
-        return f
-    valid_fractions = [4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.6666666666666666, 0.5, 0.375, 0.3333333333333333, 0.25, 0.1875, 0.16666666666666666, 0.125, 0.09375, 0.08333333333333333, 0.0625, 0.046875, 0.041666666666666664, 0.03125, 0.0234375, 0.020833333333333332, 0.015625, 0.01171875, 0.010416666666666666, 0.0078125, 0.005859375, 0.005208333333333333, 0.00390625, 0.0029296875, 0.0026041666666666665, 0.001953125, 0.00146484375, 0.0013020833333333333, 0.0009765625, 0.000732421875, 0.0006510416666666666, 0.00048828125, 0.0003662109375, 0.0003255208333333333, 0.000244140625, 0.00018310546875, 0.00016276041666666666, 0.0001220703125, 9.1552734375e-05, 8.138020833333333e-05, 6.103515625e-05, 4.57763671875e-05, 4.0690104166666664e-05, 3.0517578125e-05, 2.288818359375e-05, 2.0345052083333332e-05, 1.52587890625e-05, 1.1444091796875e-05, 1.0172526041666666e-05, 7.62939453125e-06, 5.7220458984375e-06, 5.086263020833333e-06, 3.814697265625e-06, 2.5431315104166665e-06, 1.9073486328125e-06, 1.2715657552083333e-06, 6.357828776041666e-07]
-    return min(valid_fractions, key = lambda x: abs(x - f))
+    valid_fractions = [4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.6666666666666666, 0.5, 0.375, 0.3333333333333333, 0.25, 0.1875, 0.16666666666666666, 0.125, 0.09375, 0.08333333333333333, 0.0625, 0.046875, 0.041666666666666664, 0.03125, 0.0234375, 0.020833333333333332, 0.015625, 0.01171875, 0.010416666666666666, 0.0078125, 0.005859375, 0.005208333333333333, 0.00390625, 0.0029296875, 0.0026041666666666665, 0.001953125, 0.00146484375, 0.0013020833333333333, 0.0009765625, 0.000732421875, 0.0006510416666666666, 0.00048828125, 0.0003662109375, 0.0003255208333333333, 0.000244140625, 0.00018310546875, 0.00016276041666666666, 0.0001220703125, 9.1552734375e-05, 8.138020833333333e-05, 6.103515625e-05, 4.57763671875e-05, 4.0690104166666664e-05, 3.0517578125e-05, 2.288818359375e-05, 2.0345052083333332e-05, 1.52587890625e-05, 1.1444091796875e-05, 1.0172526041666666e-05, 7.62939453125e-06, 5.7220458984375e-06, 5.086263020833333e-06, 3.814697265625e-06, 2.5431315104166665e-06, 1.9073486328125e-06, 1.2715657552083333e-06, 0]
+    return floor(f) + round(min(valid_fractions, key = lambda x: abs(x - (f % 1))), 4)
     
 
 
@@ -122,7 +121,7 @@ def notes(path: str) -> list:
                 file_notes.append(
                     ('.'.join(str(n) for n in element.normalOrder), standardize_duration(offset - last_note_offset), standardize_duration(duration))
                 )
-            last_note_offset = tempo_factor * float(element.offset)
+            last_note_offset = offset
 
         note_list.append(file_notes)
 
@@ -238,8 +237,8 @@ def get_vocab(note_list: list) -> tuple:
     for file in note_list:
         for pitch, offset, duration in file:
             all_pitches.add(pitch)
-            all_offsets.add(float(offset))
-            all_durations.add(float(duration))
+            all_offsets.add(round(float(offset), 4))
+            all_durations.add(round(float(duration), 4))
     pitch_vocab = sorted(all_pitches)
     offset_vocab = sorted(all_offsets)
     duration_vocab = sorted(all_durations)
@@ -248,10 +247,6 @@ def get_vocab(note_list: list) -> tuple:
         {u: i for i, u in enumerate(offset_vocab)}, np.array(offset_vocab),
         {u: i for i, u in enumerate(duration_vocab)}, np.array(duration_vocab)
     )
-
-def get_batch_2(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length, batch_size, location_list):
-    idx = np.random.choice(location_list[-1], batch_size)
-
     
 
 
@@ -264,24 +259,23 @@ def get_io_sequence_location_list(note_list, sequence_length):
     return location_list
 
 
-def generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length=300, ):
+def generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length=300):
     input_seq = []
     output_seq = []
 
     for file_note in note_list:
-        # file_note is a list of (pitch, offset, duration) tuples
         for i in range(0, len(file_note) - sequence_length):
             seq_in = file_note[i:i + sequence_length]
             seq_out = file_note[i + 1 : i + sequence_length + 1]
 
-            # Each sequence is split into three parallel lists (pitch, offset, duration)
+            # Always round offsets and durations to 6 decimals before lookup
             pitch_in = torch.tensor([note_to_int[n[0]] for n in seq_in])
-            offset_in = torch.tensor([offset_to_int[n[1]] for n in seq_in])
-            duration_in = torch.tensor([duration_to_int[n[2]] for n in seq_in])
+            offset_in = torch.tensor([offset_to_int[round(float(n[1]), 4)] for n in seq_in])
+            duration_in = torch.tensor([duration_to_int[round(float(n[2]), 4)] for n in seq_in])
 
             pitch_out = torch.tensor([note_to_int[n[0]] for n in seq_out])
-            offset_out = torch.tensor([offset_to_int[n[1]] for n in seq_out])
-            duration_out = torch.tensor([duration_to_int[n[2]] for n in seq_out])
+            offset_out = torch.tensor([offset_to_int[round(float(n[1]), 4)] for n in seq_out])
+            duration_out = torch.tensor([duration_to_int[round(float(n[2]), 4)] for n in seq_out])
 
             input_seq.append((pitch_in, offset_in, duration_in))
             output_seq.append((pitch_out, offset_out, duration_out))

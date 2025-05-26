@@ -5,7 +5,7 @@ import torch
 from tqdm import tqdm
 from generator import generate_notes
 from torch.utils.data import DataLoader
-from dataset import MIDISequenceDataset
+from dataset import MIDISequenceDataset, OnTheFlyMIDIDataset
 #from midi2audio import FluidSynth
 import numpy as np
 import os
@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 
 
-def main(trained = False) -> None:
+def main(trained = False, on_the_fly = True) -> None:
 
     count = 5
 
@@ -25,7 +25,7 @@ def main(trained = False) -> None:
         batch_size = 16,
         sequence_length = 300,
         learning_rate = 1e-3,
-        training_iterations = 2000,
+        training_iterations = 3000,
         output_length = 500,
     )
 
@@ -50,10 +50,7 @@ def main(trained = False) -> None:
         note_dictionary = list(note_dictionary)
 
 
-        input_sequences, output_sequences = generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length = params["sequence_length"])
-
         vocabs = {
-            "note_list": note_list,
             "note_to_int": note_to_int,
             "int_to_note": int_to_note,
             "offset_to_int": offset_to_int,
@@ -70,9 +67,13 @@ def main(trained = False) -> None:
         offset_types = len(int_to_offset)
         duration_types = len(int_to_duration)
 
-        dataset = MIDISequenceDataset(input_sequences, output_sequences)
-        input_sequences = None
-        output_sequences = None
+
+        dataset = None
+        if not on_the_fly:
+            input_sequences, output_sequences = generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length = params["sequence_length"])
+            dataset = MIDISequenceDataset(input_sequences, output_sequences)
+        else: 
+            dataset = OnTheFlyMIDIDataset(note_list, note_to_int, offset_to_int, duration_to_int, params["sequence_length"])
         dataloader = DataLoader(dataset, batch_size=params["batch_size"], shuffle=True, drop_last=True)
 
         # I guess this decides what the training and model runs on
@@ -117,7 +118,6 @@ def main(trained = False) -> None:
     else:
         with open(os.path.join(model_dir, "vocabs.pkl"), "rb") as f:
             vocabs = pickle.load(f)
-        note_list = vocabs["note_list"]
         note_to_int = vocabs["note_to_int"]
         int_to_note = vocabs["int_to_note"]
         offset_to_int = vocabs["offset_to_int"]
@@ -126,6 +126,9 @@ def main(trained = False) -> None:
         int_to_duration = vocabs["int_to_duration"]
         note_dictionary = vocabs["note_dictionary"]
 
+        # print(note_dictionary)
+        print(duration_to_int)
+
         model = LSTMModel(
             vocab_size=len(int_to_note),
             num_offsets=len(int_to_offset),
@@ -133,7 +136,7 @@ def main(trained = False) -> None:
             embedding_dim=params["embedding_dim"],
             hidden_size=params["hidden_size"]
         ).to(device)
-        model.load_state_dict(torch.load(os.path.join(model_dir, "mdl.pth")))
+        model.load_state_dict(torch.load(os.path.join(model_dir, "mdl.pth"), map_location = device))
         model.eval()
     os.makedirs("./output", exist_ok = True)
 
@@ -143,6 +146,8 @@ def main(trained = False) -> None:
         seed_duration = note_dictionary[seed_idx][1] # first duration index of the sequence
 
         seed_tuple = (seed_pitch, 0, seed_duration)
+
+        print(seed_tuple)
 
         output = generate_notes(
             model,
@@ -167,4 +172,4 @@ def main(trained = False) -> None:
         
 
 if __name__ == "__main__":
-    main(True)
+    main(False)

@@ -45,8 +45,8 @@ class OnTheFlyMIDIDataset(Dataset):
         file_notes = self.note_list[file_idx]
         seq = file_notes[start:start+self.sequence_length+1]
         pitch_seq = [self.note_to_int[n[0]] for n in seq]
-        offset_seq = [self.offset_to_int[n[1]] for n in seq]
-        duration_seq = [self.duration_to_int[n[2]] for n in seq]
+        offset_seq = [self.offset_to_int[round(n[1], 4)] for n in seq]
+        duration_seq = [self.duration_to_int[round(n[2], 4)] for n in seq]
         # Input: first N, Output: next N
         return (
             (torch.tensor(pitch_seq[:-1]), torch.tensor(offset_seq[:-1]), torch.tensor(duration_seq[:-1])),
