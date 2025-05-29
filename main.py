@@ -43,9 +43,9 @@ def main(trained = False, on_the_fly = True) -> None:
         note_to_int, int_to_note, offset_to_int, int_to_offset, duration_to_int, int_to_duration = get_vocab(note_list)
 
         note_dictionary = set()
-        for midi_file in tqdm(note_list):
+        for midi_file in note_list:
             for note in midi_file:
-                note_dictionary.add((note[0], note[1]))
+                note_dictionary.add(note)
 
         note_dictionary = list(note_dictionary)
 
@@ -142,10 +142,8 @@ def main(trained = False, on_the_fly = True) -> None:
 
     for i in range(count):
         seed_idx = np.random.choice(len(note_dictionary), 1)[0]
-        seed_pitch = note_dictionary[seed_idx][0]  # first pitch index of the sequence
-        seed_duration = note_dictionary[seed_idx][1] # first duration index of the sequence
 
-        seed_tuple = (seed_pitch, 0, seed_duration)
+        seed_tuple = note_dictionary[seed_idx]
 
         print(seed_tuple)
 
