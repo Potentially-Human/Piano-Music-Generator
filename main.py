@@ -1,9 +1,9 @@
-from dataparser import notes, get_vocab, generate_io_sequences, get_batch, create_midi
+from dataparser import notes, get_vocab, generate_io_sequences, get_batch, create_midi, end_notes
 from model import LSTMModel, compute_loss
 from trainer import train_step
 import torch
 from tqdm import tqdm
-from generator import generate_notes
+from generator import generate_notes, generate_end
 from torch.utils.data import DataLoader
 from dataset import MIDISequenceDataset, OnTheFlyMIDIDataset
 #from midi2audio import FluidSynth
@@ -27,6 +27,7 @@ def main(trained = False, on_the_fly = True) -> None:
         learning_rate = 1e-3,
         training_iterations = 3000,
         output_length = 500,
+        max_end_length = 50
     )
 
 
@@ -39,8 +40,9 @@ def main(trained = False, on_the_fly = True) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if not trained:
-        note_list = notes(path)
-        note_to_int, int_to_note, offset_to_int, int_to_offset, duration_to_int, int_to_duration = get_vocab(note_list)
+        note_list, end_note_list, combined_note_list = notes(path)
+        
+        note_to_int, int_to_note, offset_to_int, int_to_offset, duration_to_int, int_to_duration = get_vocab(combined_note_list)
 
         note_dictionary = set()
         for midi_file in note_list:
@@ -115,6 +117,35 @@ def main(trained = False, on_the_fly = True) -> None:
         plt.ylabel("Loss")
         plt.title("Training Loss Curve")
         plt.savefig(os.path.join(model_dir, "loss_curve.png"))
+
+        ending_model = LSTMModel(vocab_size, offset_types, duration_types, params["embedding_dim"], params["hidden_size"]).to(device)
+        ending_optimizer = torch.optim.Adam(ending_model.parameters(), lr=params["learning_rate"])
+        if hasattr(tqdm, '_instances'): tqdm._instances.clear() # tqdm is the progress bar thing
+
+        ending_dataset = OnTheFlyMIDIDataset(end_note_list, note_to_int, offset_to_int, duration_to_int, params["sequence_length"])
+        ending_dataloader = DataLoader(dataset, batch_size=params["batch_size"], shuffle=True, drop_last=True)
+
+        ending_losses = []
+
+        for it, (x_vals, y_vals) in enumerate(tqdm(ending_dataloader)):
+            if it >= params["training_iterations"]:
+                break
+            elif it % 100 == 0:
+                torch.save(ending_model.state_dict(), os.path.join(model_dir, "end_mdl.pth"))
+            x_pitch, x_offset, x_duration = x_vals
+            y_pitch, y_offset, y_duration = y_vals
+            x_pitch, x_offset, x_duration = x_pitch.to(device), x_offset.to(device), x_duration.to(device)
+            y_pitch, y_offset, y_duration = y_pitch.to(device), y_offset.to(device), y_duration.to(device)
+
+            # Stack inputs along last dimension for embedding
+            x = torch.stack([x_pitch, x_offset, x_duration], dim=2)  # shape: (batch, seq, 3)
+            y = (y_pitch, y_offset, y_duration)
+
+            end_loss = train_step(x, y, model, ending_optimizer, compute_loss)
+            ending_losses.append(end_loss)
+        torch.save(ending_model.state_dict(), os.path.join(model_dir, "end_mdl.pth"))
+
+
     else:
         with open(os.path.join(model_dir, "vocabs.pkl"), "rb") as f:
             vocabs = pickle.load(f)
@@ -138,6 +169,15 @@ def main(trained = False, on_the_fly = True) -> None:
         ).to(device)
         model.load_state_dict(torch.load(os.path.join(model_dir, "mdl.pth"), map_location = device))
         model.eval()
+
+        ending_model = LSTMModel(
+            vocab_size=len(int_to_note),
+            num_offsets=len(int_to_offset),
+            num_durations=len(int_to_duration),
+            embedding_dim=params["embedding_dim"],
+            hidden_size=params["hidden_size"]
+        ).to(device)
+        ending_model.load_state_dict(torch.load(os.path.join(model_dir, "end_mdl.pth"), map_location = device))
     os.makedirs("./output", exist_ok = True)
 
     for i in range(count):
@@ -156,6 +196,17 @@ def main(trained = False, on_the_fly = True) -> None:
             device,
             params["output_length"]
         )
+
+        output = generate_end(
+            model,
+            output,
+            note_to_int, int_to_note,
+            offset_to_int, int_to_offset,
+            duration_to_int, int_to_duration,
+            device,
+            params["max_end_length"]
+        )
+        
         create_midi(output, os.path.join("./output", "output" + str(i) + ".mid"))
 
     #fs = FluidSynth("./soundfont.sf2")

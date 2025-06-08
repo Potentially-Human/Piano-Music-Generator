@@ -67,6 +67,7 @@ class LSTMModel(nn.Module):
         return out if not return_state else (out, state)
 """
 
+
 def compute_loss(labels, logits): # basically labels = inputs, logits = outputs
     # Unpack
     pitch_labels, offset_labels, duration_labels = labels

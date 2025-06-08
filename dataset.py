@@ -52,3 +52,4 @@ class OnTheFlyMIDIDataset(Dataset):
             (torch.tensor(pitch_seq[:-1]), torch.tensor(offset_seq[:-1]), torch.tensor(duration_seq[:-1])),
             (torch.tensor(pitch_seq[1:]), torch.tensor(offset_seq[1:]), torch.tensor(duration_seq[1:]))
         )
+    

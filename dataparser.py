@@ -50,9 +50,11 @@ def notes(path : str) -> list:
     return note_list
 """
 
-def notes(path: str) -> list:
+def notes(path: str, sequence_length, ending_num) -> list:
     # List to store notes with their offsets, durations, and tempo
     note_list = []
+    end_note_list = []
+    combined_note_list = []
     for file in tqdm(glob.glob(path + "/*.mid")):
         midi = None
         try:
@@ -81,7 +83,11 @@ def notes(path: str) -> list:
 
         last_note_offset = 0
 
+        add_ending = len(notes_to_parse) > sequence_length + ending_num 
+
         file_notes = []
+        end_notes = []
+        combined_notes = []
 
         """try:
             if pedals[0][0] == 0 and pedals[0][1] == 0:
@@ -90,7 +96,7 @@ def notes(path: str) -> list:
         except IndexError:
             pass"""
 
-        for element in notes_to_parse:
+        for i, element in enumerate(notes_to_parse):
             """
             try:
                 for _ in range(2):
@@ -106,6 +112,34 @@ def notes(path: str) -> list:
 """
             offset = tempo_factor * float(element.offset)
             duration = tempo_factor * float(element.quarterLength)
+
+            if isinstance(element, note.Note):
+                combined_notes.append(
+                    (str(element.pitch), standardize_duration(offset - last_note_offset), standardize_duration(duration))
+                )
+            elif isinstance(element, chord.Chord):
+                # if float(element.quarterLength) == 0:
+                #     continue
+                # Extract chord, offset, and duration
+                combined_notes.append(
+                    ('.'.join(str(n) for n in element.normalOrder), standardize_duration(offset - last_note_offset), standardize_duration(duration))
+                )
+
+            if add_ending and i >= len(notes_to_parse) - sequence_length - ending_num:
+                if isinstance(element, note.Note):
+                    end_notes.append(
+                        (str(element.pitch), standardize_duration(offset - last_note_offset), standardize_duration(duration))
+                    )
+                elif isinstance(element, chord.Chord):
+                    # if float(element.quarterLength) == 0:
+                    #     continue
+                    # Extract chord, offset, and duration
+                    end_notes.append(
+                        ('.'.join(str(n) for n in element.normalOrder), standardize_duration(offset - last_note_offset), standardize_duration(duration))
+                    )
+                last_note_offset = offset
+                continue
+
             if isinstance(element, note.Note):
                 
                 # if float(element.quarterLength) == 0:
@@ -124,12 +158,15 @@ def notes(path: str) -> list:
             last_note_offset = offset
 
         note_list.append(file_notes)
+        end_notes.append("Terminate")
+        end_note_list.append(end_notes)
+        combined_note_list.append(combined_notes)
 
     # Save the notes with offsets, durations, and tempo
-    with open('data/notes', 'wb') as filepath:
-        pickle.dump(note_list, filepath)
+    """with open('data/notes', 'wb') as filepath:
+        pickle.dump(note_list, filepath)"""
 
-    return note_list
+    return note_list, end_note_list, combined_notes
     
 
 # Yeah ok I just plagerized this function
@@ -175,7 +212,7 @@ def create_midi(prediction_output, output_path):
        from the notes, including offset, duration, and tempo."""
 
     # Extract tempo from the first element (assuming tempo is consistent)
-    tempo_mark = tempo.MetronomeMark(number=72)
+    tempo_mark = tempo.MetronomeMark(number=120)
 
     # Add tempo to the MIDI stream
     midi_stream = stream.Stream()
@@ -240,8 +277,11 @@ def get_vocab(note_list: list) -> tuple:
             all_offsets.add(round(float(offset), 4))
             all_durations.add(round(float(duration), 4))
     pitch_vocab = sorted(all_pitches)
+    pitch_vocab.append("Terminate")
     offset_vocab = sorted(all_offsets)
     duration_vocab = sorted(all_durations)
+    note_to_int = {u: i for i, u in enumerate(pitch_vocab)}
+    
     return (
         {u: i for i, u in enumerate(pitch_vocab)}, np.array(pitch_vocab),
         {u: i for i, u in enumerate(offset_vocab)}, np.array(offset_vocab),
@@ -298,3 +338,21 @@ def get_batch(input_sequences, output_sequences, batch_size):
 
     # Return as tuples for model and loss
     return (pitch_in, offset_in, duration_in), (pitch_out, offset_out, duration_out)
+
+
+# Unused, note_list should take combined_note_list
+def end_notes(note_list, sequence_length, ending_num):
+    ending_note_list = []
+    for element in note_list:
+        if len(element) <= sequence_length + ending_num:
+            end = element.copy()
+            end.append(("Terminate", 0, 0))
+            ending_note_list.append(end)
+        else:
+            end = element[-sequence_length - ending_num:-1].copy()
+            end.append(("Terminate", 0, 0))
+            ending_note_list.append(end)
+
+    return ending_note_list
+
+        
