@@ -1,4 +1,5 @@
 from music21 import converter, instrument, note, chord, stream, tempo
+from midi_parsing import parse_midi, write_midi
 import pickle
 import glob
 import numpy as np
@@ -6,6 +7,54 @@ from itertools import chain
 import torch
 from tqdm import tqdm
 from math import floor
+
+def notes(path: str, sequence_length, ending_num) -> list:
+    note_list = []
+    end_note_list = []
+    combined_note_list = []
+    for file in tqdm(glob.glob(path + "/*.mid")):
+        try: 
+            file_note_list = parse_midi(file)
+            combined_note_list.append(file_note_list)
+
+            if len(file_note_list) <= sequence_length + ending_num:
+                note_list.append(file_note_list)
+            else:
+                note_list.append(file_note_list[:-ending_num])
+                end_note_list.append(file_note_list[-ending_num-sequence_length:] + [("Terminate", 0, 0, 0)])
+        except:
+            print(file)
+            continue
+
+    return note_list, end_note_list, combined_note_list
+
+def get_vocab(combined_note_list: list) -> tuple:
+    # Flatten all (pitch, offset, duration) tuples across all files
+    all_pitches = set()
+    for file in combined_note_list:
+        for (pitch, offset, duration, volume) in file:
+            all_pitches.add(pitch)
+            pitch_strings = []
+    pitch_ints = []
+    for i in all_pitches:
+        if type(i) == type(1):
+            pitch_ints.append(i)
+        else:
+            pitch_strings.append(i)
+    pitch_strings = sorted(pitch_strings)
+    pitch_ints = sorted(pitch_ints)
+    pitch_vocab = pitch_ints + pitch_strings
+    pitch_vocab.append("Terminate")
+    
+    return (
+        {u: i for i, u in enumerate(pitch_vocab)}, pitch_vocab
+    )
+
+
+
+
+
+# The rest of this file is unused after the current update. 
 
 # attempting to open midi files
 
@@ -50,7 +99,7 @@ def notes(path : str) -> list:
     return note_list
 """
 
-def notes(path: str, sequence_length, ending_num) -> list:
+def notes_old(path: str, sequence_length, ending_num) -> list:
     # List to store notes with their offsets, durations, and tempo
     note_list = []
     end_note_list = []
@@ -158,7 +207,7 @@ def notes(path: str, sequence_length, ending_num) -> list:
             last_note_offset = offset
 
         note_list.append(file_notes)
-        end_notes.append("Terminate")
+        end_notes.append(("Terminate", 0, 0))
         end_note_list.append(end_notes)
         combined_note_list.append(combined_notes)
 
@@ -166,8 +215,9 @@ def notes(path: str, sequence_length, ending_num) -> list:
     """with open('data/notes', 'wb') as filepath:
         pickle.dump(note_list, filepath)"""
 
-    return note_list, end_note_list, combined_notes
+    return note_list, end_note_list, combined_note_list
     
+
 
 # Yeah ok I just plagerized this function
 # Or used Mr. GPT
@@ -207,7 +257,7 @@ def create_midi(prediction_output,
     midi_stream.write('midi', fp=output_path)
 """
 
-def create_midi(prediction_output, output_path):
+def create_midi_old(prediction_output, output_path):
     """Convert the output from the prediction to notes and create a MIDI file
        from the notes, including offset, duration, and tempo."""
 
@@ -266,39 +316,15 @@ def create_midi(prediction_output, output_path):
     # Write the MIDI file
     midi_stream.write('midi', fp=output_path)
 
-def get_vocab(note_list: list) -> tuple:
-    # Flatten all (pitch, offset, duration) tuples across all files
-    all_pitches = set()
-    all_offsets = set()
-    all_durations = set()
-    for file in note_list:
-        for pitch, offset, duration in file:
-            all_pitches.add(pitch)
-            all_offsets.add(round(float(offset), 4))
-            all_durations.add(round(float(duration), 4))
-    pitch_vocab = sorted(all_pitches)
-    pitch_vocab.append("Terminate")
-    offset_vocab = sorted(all_offsets)
-    duration_vocab = sorted(all_durations)
-    note_to_int = {u: i for i, u in enumerate(pitch_vocab)}
-    
-    return (
-        {u: i for i, u in enumerate(pitch_vocab)}, np.array(pitch_vocab),
-        {u: i for i, u in enumerate(offset_vocab)}, np.array(offset_vocab),
-        {u: i for i, u in enumerate(duration_vocab)}, np.array(duration_vocab)
-    )
-    
 
 
-def get_io_sequence_location_list(note_list, sequence_length):
-    location_list = [0]
+""""
 
-    for file_note in note_list:
-        location_list.append(location_list[-1] + len(file_note) - sequence_length)
+The following functions are unused and are not updated 
 
-    return location_list
+"""
 
-
+# No longer used
 def generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int, sequence_length=300):
     input_seq = []
     output_seq = []
@@ -322,6 +348,8 @@ def generate_io_sequences(note_list, note_to_int, offset_to_int, duration_to_int
 
     return input_seq, output_seq
 
+
+# No longer used
 def get_batch(input_sequences, output_sequences, batch_size):
     idx = np.random.choice(len(input_sequences), batch_size)
     input_batch = [input_sequences[i] for i in idx]

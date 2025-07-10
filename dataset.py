@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 
+# This class is unused. Currently using OnTheFlyMIDIDataset. 
 class MIDISequenceDataset(Dataset):
     def __init__(self, input_sequences, output_sequences):
         self.input_sequences = input_sequences
@@ -11,16 +12,18 @@ class MIDISequenceDataset(Dataset):
     
     def __getitem__(self, idx):
         # Each input/output is a tuple: (pitch_seq, offset_seq, duration_se5q)
-        pitch_in, offset_in, duration_in = self.input_sequences[idx]
-        pitch_out, offset_out, duration_out = self.output_sequences[idx]
+        pitch_in, offset_in, duration_in, volume_in = self.input_sequences[idx]
+        pitch_out, offset_out, duration_out, volume_out = self.output_sequences[idx]
         # Convert to tensors
         pitch_in = torch.tensor(pitch_in, dtype=torch.long)
         offset_in = torch.tensor(offset_in, dtype=torch.long)
         duration_in = torch.tensor(duration_in, dtype=torch.long)
+        volume_in = torch.tensor(volume_in, dtype=torch.long)
         pitch_out = torch.tensor(pitch_out, dtype=torch.long)
         offset_out = torch.tensor(offset_out, dtype=torch.long)
         duration_out = torch.tensor(duration_out, dtype=torch.long)
-        return (pitch_in, offset_in, duration_in), (pitch_out, offset_out, duration_out)
+        volume_out = torch.tensor(volume_out, dtype=torch.long)
+        return (pitch_in, offset_in, duration_in, volume_in), (pitch_out, offset_out, duration_out, volume_out)
     
 
 class OnTheFlyMIDIDataset(Dataset):
@@ -45,11 +48,12 @@ class OnTheFlyMIDIDataset(Dataset):
         file_notes = self.note_list[file_idx]
         seq = file_notes[start:start+self.sequence_length+1]
         pitch_seq = [self.note_to_int[n[0]] for n in seq]
-        offset_seq = [self.offset_to_int[round(n[1], 4)] for n in seq]
-        duration_seq = [self.duration_to_int[round(n[2], 4)] for n in seq]
+        offset_seq = [self.offset_to_int[round(n[1])] for n in seq]
+        duration_seq = [self.duration_to_int[round(n[2])] for n in seq]
+        volume_seq = [round(n[3]) for n in seq]
         # Input: first N, Output: next N
         return (
-            (torch.tensor(pitch_seq[:-1]), torch.tensor(offset_seq[:-1]), torch.tensor(duration_seq[:-1])),
-            (torch.tensor(pitch_seq[1:]), torch.tensor(offset_seq[1:]), torch.tensor(duration_seq[1:]))
+            (torch.tensor(pitch_seq[:-1]), torch.tensor(offset_seq[:-1]), torch.tensor(duration_seq[:-1]), torch.tensor(volume_seq[:-1])),
+            (torch.tensor(pitch_seq[1:]), torch.tensor(offset_seq[1:]), torch.tensor(duration_seq[1:]), torch.tensor(volume_seq[1:]))
         )
     
